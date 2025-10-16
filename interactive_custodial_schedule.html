@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VMAC Interactive Custodial Schedule</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Harmony -->
+    <!-- Application Structure Plan: The SPA is designed as a "Daily Task View" dashboard. This structure was chosen to transform the static, dense spreadsheet into a user-centric tool. The user's primary goal is to know "What do I need to do today?". The layout features a persistent weekly navigation on the left (desktop) or top (mobile), allowing users to easily switch between days, and a dynamic main content area that displays the selected day's schedule. This is more intuitive than scrolling through a long document. The schedule is broken down into time-blocked, interactive cards, making the information digestible and actionable. This design prioritizes immediate clarity and task management over a simple chronological display. -->
+    <!-- Visualization & Content Choices: Report Info -> Goal -> Viz/Presentation -> Interaction -> Justification. 1. Daily/Weekly Tasks -> Organize/Inform -> Interactive Task Cards with Checklists -> Click to check/uncheck -> Provides a sense of accomplishment and clear tracking of completed work. Color-coded borders on deep clean cards provide quick visual association with the zone. 2. Weekly Deep Clean Progress -> Engage/Motivate -> Donut Chart (Chart.js/Canvas) -> Chart updates on checkbox click -> Offers a "wow factor" and visual feedback on progress towards the weekly goal, making the work more engaging. 3. Schedule Navigation -> Navigate -> Day Selector Buttons -> Click to update view -> A simple, intuitive method for a recurring weekly schedule, superior to a full calendar for this specific use case. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+        }
+        .task-card {
+            border-left-width: 4px;
+            transition: all 0.3s ease;
+        }
+        .nav-button {
+            transition: all 0.3s ease;
+        }
+        .nav-button.active {
+            background-color: #4338ca; /* indigo-700 */
+            color: white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .task-checkbox:checked + label {
+            text-decoration: line-through;
+            color: #6b7280; /* gray-500 */
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 250px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 250px;
+            max-height: 250px;
+        }
+        .gemini-button {
+            background-color: #4f46e5; /* indigo-600 */
+            color: white;
+            transition: background-color 0.3s ease;
+        }
+        .gemini-button:hover {
+            background-color: #4338ca; /* indigo-700 */
+        }
+        .spinner {
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border-left-color: #fff;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .collapsible-content {
+            transition: max-height 0.5s ease-in-out, visibility 0.5s ease-in-out;
+            max-height: 1000px; /* arbitrary large value */
+            overflow: hidden;
+            visibility: visible;
+        }
+        .collapsible-content.collapsed {
+            max-height: 0;
+            visibility: hidden;
+        }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="container mx-auto p-4 sm:p-6 md:p-8 max-w-7xl">
+        <header class="mb-6 md:mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">VMAC Interactive Custodial Schedule</h1>
+            <p id="currentDate" class="text-md text-slate-500 mt-1"></p>
+        </header>
+
+        <main class="flex flex-col lg:grid lg:grid-cols-4 lg:gap-8">
+            
+            <aside class="lg:col-span-1 order-2 lg:order-1 mt-8 lg:mt-0">
+                <div class="bg-white p-4 rounded-lg shadow-sm lg:sticky lg:top-8">
+                    <h2 class="text-lg font-semibold mb-4 text-slate-700 hidden lg:block">Select Day</h2>
+                    <div id="day-navigation-desktop" class="hidden lg:flex lg:flex-col gap-2">
+                        <button data-day="monday" class="nav-button w-full text-left p-3 rounded-md font-medium text-slate-600 hover:bg-slate-100">Monday</button>
+                        <button data-day="tuesday" class="nav-button w-full text-left p-3 rounded-md font-medium text-slate-600 hover:bg-slate-100">Tuesday</button>
+                        <button data-day="wednesday" class="nav-button w-full text-left p-3 rounded-md font-medium text-slate-600 hover:bg-slate-100">Wednesday</button>
+                        <button data-day="thursday" class="nav-button w-full text-left p-3 rounded-md font-medium text-slate-600 hover:bg-slate-100">Thursday</button>
+                        <button data-day="friday" class="nav-button w-full text-left p-3 rounded-md font-medium text-slate-600 hover:bg-slate-100">Friday</button>
+                    </div>
+
+                    <div id="dashboard-toggle-container" class="lg:hidden">
+                        <hr class="my-6 border-slate-200">
+                        <button id="dashboard-toggle" class="w-full flex justify-between items-center text-lg font-semibold text-slate-700">
+                            <span>Dashboard & AI Tools</span>
+                            <span id="toggle-icon">▼</span>
+                        </button>
+                    </div>
+
+                    <div id="dashboard-content" class="collapsible-content">
+                        <hr class="my-6 border-slate-200 hidden lg:block">
+
+                        <h2 class="text-lg font-semibold mb-4 text-slate-700">Weekly Progress</h2>
+                        <p class="text-sm text-slate-500 mb-2 text-center">Deep clean tasks completed</p>
+                        <div class="chart-container">
+                            <canvas id="progressChart"></canvas>
+                        </div>
+
+                        <hr class="my-6 border-slate-200">
+
+                        <div class="space-y-6">
+                            <h2 class="text-lg font-semibold text-slate-700">AI Assistant</h2>
+                            <div>
+                                <button id="safetyTipBtn" class="gemini-button w-full flex items-center justify-center p-3 rounded-md font-medium">
+                                    <span class="btn-text">✨ Get Daily Safety Tip</span>
+                                    <span class="spinner hidden ml-2"></span>
+                                </button>
+                                <p id="safetyTipResult" class="mt-3 text-sm text-slate-600 bg-slate-100 p-3 rounded-md min-h-[50px]"></p>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-slate-700 mb-2">Stain Removal Guide</h3>
+                                <textarea id="stainInput" class="w-full border border-slate-300 rounded-md p-2 text-sm" rows="3" placeholder="e.g., coffee stain on office carpet"></textarea>
+                                <button id="stainBtn" class="gemini-button w-full flex items-center justify-center mt-2 p-3 rounded-md font-medium">
+                                    <span class="btn-text">✨ Get Cleaning Advice</span>
+                                    <span class="spinner hidden ml-2"></span>
+                                </button>
+                                <div id="stainResult" class="mt-3 text-sm text-slate-600 bg-slate-100 p-3 rounded-md min-h-[100px]"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <div class="order-1 lg:order-2 lg:col-span-3">
+                <div class="bg-white p-3 rounded-lg shadow-sm lg:hidden mb-6">
+                    <h2 class="text-md font-semibold mb-3 text-slate-700 text-center">Select Day</h2>
+                    <div id="day-navigation-mobile" class="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                         <button data-day="monday" class="nav-button p-2 text-sm sm:p-3 rounded-md font-medium text-slate-600 hover:bg-slate-100">Mon</button>
+                         <button data-day="tuesday" class="nav-button p-2 text-sm sm:p-3 rounded-md font-medium text-slate-600 hover:bg-slate-100">Tue</button>
+                         <button data-day="wednesday" class="nav-button p-2 text-sm sm:p-3 rounded-md font-medium text-slate-600 hover:bg-slate-100">Wed</button>
+                         <button data-day="thursday" class="nav-button p-2 text-sm sm:p-3 rounded-md font-medium text-slate-600 hover:bg-slate-100">Thu</button>
+                         <button data-day="friday" class="nav-button p-2 text-sm sm:p-3 rounded-md font-medium text-slate-600 hover:bg-slate-100">Fri</button>
+                    </div>
+                </div>
+
+                <div id="schedule-display">
+                    <!-- Schedule content will be dynamically inserted here -->
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Templates for each day's schedule -->
+    <template id="schedule-template">
+        <div class="space-y-6">
+            <div class="bg-white p-6 rounded-lg shadow-sm">
+                <h2 class="text-2xl font-bold mb-1" data-id="day-title"></h2>
+                <p class="text-lg font-medium text-indigo-600" data-id="shift-hours"></p>
+            </div>
+
+            <div data-id="task-container" class="space-y-6">
+                <!-- Task cards will be inserted here -->
+            </div>
+        </div>
+    </template>
+    
+    <template id="task-card-template">
+         <div class="task-card bg-white p-6 rounded-lg shadow-sm" style="border-color: var(--card-color, #e5e7eb);">
+            <h3 class="text-lg sm:text-xl font-semibold mb-4 text-slate-800 flex items-center">
+                <span class="mr-3" data-id="card-icon"></span>
+                <span data-id="card-title"></span>
+            </h3>
+            <div data-id="card-content" class="space-y-3 text-slate-600">
+                <!-- Card content/checklist goes here -->
+            </div>
+        </div>
+    </template>
+
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        const scheduleData = {
+            monday: {
+                title: "Monday",
+                shift: "6:00 AM - 2:30 PM",
+                tasks: [
+                    {
+                        type: 'deep-clean',
+                        title: 'Weekly Deep Clean',
+                        icon: '🧹',
+                        color: '#a855f7', // purple-500
+                        content: `
+                            <div class="font-medium text-slate-700">Zone 6 (Purple):</div>
+                            <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="m1" class="task-checkbox deep-clean-checkbox mr-2"><label for="m1">Vacuum all carpets in offices.</label></li>
+                                <li><input type="checkbox" id="m2" class="task-checkbox deep-clean-checkbox mr-2"><label for="m2">Mop hard floors.</label></li>
+                                <li><input type="checkbox" id="m3" class="task-checkbox deep-clean-checkbox mr-2"><label for="m3">Detail clean the Zone 6 washroom & lunchroom.</label></li>
+                            </ul>
+                            <div class="font-medium text-slate-700 mt-4">Zone 7 (Grey):</div>
+                            <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="m4" class="task-checkbox deep-clean-checkbox mr-2"><label for="m4">Sweep & mop Custom Shop and Engineering floors.</label></li>
+                                <li><input type="checkbox" id="m5" class="task-checkbox deep-clean-checkbox mr-2"><label for="m5">Vacuum carpets in offices & Conference Room.</label></li>
+                                <li><input type="checkbox" id="m6" class="task-checkbox deep-clean-checkbox mr-2"><label for="m6">Clean Test Lab building.</label></li>
+                            </ul>
+                        `
+                    },
+                    {
+                        type: 'daily-routine',
+                        title: 'Daily Routine',
+                        icon: '🔄',
+                        color: '#6b7280', // gray-500
+                        content: `
+                            <p class="mb-2">Complete all Daily Recurring Tasks in Zones 1, 2, 3, 4, 5, & 8.</p>
+                             <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="dr1" class="task-checkbox mr-2"><label for="dr1">Empty Garbage & Recycling</label></li>
+                                <li><input type="checkbox" id="dr2" class="task-checkbox mr-2"><label for="dr2">Clean & Restock Washrooms</label></li>
+                                <li><input type="checkbox" id="dr3" class="task-checkbox mr-2"><label for="dr3">Clean Lunchrooms</label></li>
+                                <li><input type="checkbox" id="dr4" class="task-checkbox mr-2"><label for="dr4">Spot Mop Floors</label></li>
+                                <li><input type="checkbox" id="dr5" class="task-checkbox mr-2"><label for="dr5">Refill Sanitizer Stations</label></li>
+                            </ul>
+                        `
+                    }
+                ]
+            },
+            tuesday: {
+                title: "Tuesday",
+                shift: "6:00 AM - 2:30 PM",
+                tasks: [
+                    {
+                        type: 'deep-clean',
+                        title: 'Weekly Deep Clean',
+                        icon: '🧹',
+                        color: '#f59e0b', // amber-500
+                        content: `
+                            <div class="font-medium text-slate-700">Zone 3 (Yellow):</div>
+                            <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="t1" class="task-checkbox deep-clean-checkbox mr-2"><label for="t1">Dust mop/scrub Warehouse floor.</label></li>
+                                <li><input type="checkbox" id="t2" class="task-checkbox deep-clean-checkbox mr-2"><label for="t2">Detail clean Reception area glass & counters.</label></li>
+                                <li><input type="checkbox" id="t3" class="task-checkbox deep-clean-checkbox mr-2"><label for="t3">Vacuum office carpets.</label></li>
+                            </ul>
+                            <div class="font-medium text-slate-700 mt-4">Zone 8 (Brown):</div>
+                            <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="t4" class="task-checkbox deep-clean-checkbox mr-2"><label for="t4">Sweep & mop production floor.</label></li>
+                                <li><input type="checkbox" id="t5" class="task-checkbox deep-clean-checkbox mr-2"><label for="t5">Detail clean the Zone 8 lunchroom.</label></li>
+                            </ul>
+                        `
+                    },
+                    {
+                        type: 'daily-routine',
+                        title: 'Daily Routine',
+                        icon: '🔄',
+                        color: '#6b7280', // gray-500
+                        content: `
+                            <p class="mb-2">Complete all Daily Recurring Tasks in Zones 1, 2, 4, 5, 6, & 7.</p>
+                             <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="dr1-tue" class="task-checkbox mr-2"><label for="dr1-tue">Empty Garbage & Recycling</label></li>
+                                <li><input type="checkbox" id="dr2-tue" class="task-checkbox mr-2"><label for="dr2-tue">Clean & Restock Washrooms</label></li>
+                                <li><input type="checkbox" id="dr3-tue" class="task-checkbox mr-2"><label for="dr3-tue">Clean Lunchrooms</label></li>
+                                <li><input type="checkbox" id="dr4-tue" class="task-checkbox mr-2"><label for="dr4-tue">Spot Mop Floors</label></li>
+                                <li><input type="checkbox" id="dr5-tue" class="task-checkbox mr-2"><label for="dr5-tue">Refill Sanitizer Stations</label></li>
+                            </ul>
+                        `
+                    }
+                ]
+            },
+            wednesday: {
+                title: "Wednesday",
+                shift: "6:00 AM - 2:30 PM",
+                tasks: [
+                    {
+                        type: 'monthly-project',
+                        title: 'Monthly Project: High Dusting',
+                        icon: '✨',
+                        color: '#0ea5e9', // sky-500
+                        content: `
+                            <p class="mb-2">First, complete all Daily Recurring Tasks for all 8 zones.</p>
+                            <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="w1" class="task-checkbox mr-2"><label for="w1">Use extendable duster to clean high fixtures.</label></li>
+                                <li><input type="checkbox" id="w2" class="task-checkbox mr-2"><label for="w2">Clean vents and sprinkler heads.</label></li>
+                                <li><input type="checkbox" id="w3" class="task-checkbox mr-2"><label for="w3">Dust tops of tall cabinets across the entire facility.</label></li>
+                            </ul>
+                            <p class="text-xs text-slate-500 mt-4">Note: This is Week 1's monthly project. This card would update based on the week of the month.</p>
+                        `
+                    },
+                     {
+                        type: 'daily-routine',
+                        title: 'Daily Routine',
+                        icon: '🔄',
+                        color: '#6b7280',
+                        content: `
+                            <p class="mb-2">Complete all Daily Recurring Tasks in all 8 zones.</p>
+                             <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="dr1-wed" class="task-checkbox mr-2"><label for="dr1-wed">Empty Garbage & Recycling</label></li>
+                                <li><input type="checkbox" id="dr2-wed" class="task-checkbox mr-2"><label for="dr2-wed">Clean & Restock Washrooms</label></li>
+                                <li><input type="checkbox" id="dr3-wed" class="task-checkbox mr-2"><label for="dr3-wed">Clean Lunchrooms</label></li>
+                                <li><input type="checkbox" id="dr4-wed" class="task-checkbox mr-2"><label for="dr4-wed">Spot Mop Floors</label></li>
+                                <li><input type="checkbox" id="dr5-wed" class="task-checkbox mr-2"><label for="dr5-wed">Refill Sanitizer Stations</label></li>
+                            </ul>
+                        `
+                    }
+                ]
+            },
+            thursday: {
+                title: "Thursday",
+                shift: "11:00 AM - 7:00 PM",
+                tasks: [
+                    {
+                        type: 'daily-routine',
+                        title: 'Daily Routine (11 AM - 3:30 PM)',
+                        icon: '🔄',
+                        color: '#6b7280',
+                        content: `
+                            <p class="mb-2">Complete a full round of Daily Recurring Tasks for all 8 zones.</p>
+                             <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="dr1-thu" class="task-checkbox mr-2"><label for="dr1-thu">Empty Garbage & Recycling</label></li>
+                                <li><input type="checkbox" id="dr2-thu" class="task-checkbox mr-2"><label for="dr2-thu">Clean & Restock Washrooms</label></li>
+                                <li><input type="checkbox" id="dr3-thu" class="task-checkbox mr-2"><label for="dr3-thu">Clean Lunchrooms</label></li>
+                                <li><input type="checkbox" id="dr4-thu" class="task-checkbox mr-2"><label for="dr4-thu">Spot Mop Floors</label></li>
+                                <li><input type="checkbox" id="dr5-thu" class="task-checkbox mr-2"><label for="dr5-thu">Refill Sanitizer Stations</label></li>
+                            </ul>
+                        `
+                    },
+                    {
+                        type: 'deep-clean',
+                        title: 'Weekly Deep Clean (Post-Production)',
+                        icon: '🧹',
+                        color: '#f97316', // orange-500
+                        content: `
+                            <div class="font-medium text-slate-700">Zone 1 (Orange):</div>
+                            <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="th1" class="task-checkbox deep-clean-checkbox mr-2"><label for="th1">Sweep/mop Foundry, CMM, & OEM shop floors.</label></li>
+                                <li><input type="checkbox" id="th2" class="task-checkbox deep-clean-checkbox mr-2"><label for="th2">Vacuum Quality Assurance offices.</label></li>
+                            </ul>
+                            <div class="font-medium text-slate-700 mt-4">Zone 4 (Green):</div>
+                            <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="th3" class="task-checkbox deep-clean-checkbox mr-2"><label for="th3">Scrub Assembly Area floor.</label></li>
+                                <li><input type="checkbox" id="th4" class="task-checkbox deep-clean-checkbox mr-2"><label for="th4">Vacuum office carpets.</label></li>
+                                <li><input type="checkbox" id="th5" class="task-checkbox deep-clean-checkbox mr-2"><label for="th5">Detail clean First Aid room.</label></li>
+                            </ul>
+                        `
+                    }
+                ]
+            },
+            friday: {
+                title: "Friday",
+                shift: "11:00 AM - 7:00 PM",
+                 tasks: [
+                    {
+                        type: 'daily-routine',
+                        title: 'Daily Routine (11 AM - 3:30 PM)',
+                        icon: '🔄',
+                        color: '#6b7280',
+                        content: `
+                            <p class="mb-2">Complete a full round of Daily Recurring Tasks for all 8 zones.</p>
+                             <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="dr1-fri" class="task-checkbox mr-2"><label for="dr1-fri">Empty Garbage & Recycling</label></li>
+                                <li><input type="checkbox" id="dr2-fri" class="task-checkbox mr-2"><label for="dr2-fri">Clean & Restock Washrooms</label></li>
+                                <li><input type="checkbox" id="dr3-fri" class="task-checkbox mr-2"><label for="dr3-fri">Clean Lunchrooms</label></li>
+                                <li><input type="checkbox" id="dr4-fri" class="task-checkbox mr-2"><label for="dr4-fri">Spot Mop Floors</label></li>
+                                <li><input type="checkbox" id="dr5-fri" class="task-checkbox mr-2"><label for="dr5-fri">Refill Sanitizer Stations</label></li>
+                            </ul>
+                        `
+                    },
+                    {
+                        type: 'deep-clean',
+                        title: 'Weekly Deep Clean (Post-Production)',
+                        icon: '🧹',
+                        color: '#3b82f6', // blue-500
+                        content: `
+                            <div class="font-medium text-slate-700">Zone 2 (Blue):</div>
+                            <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="f1" class="task-checkbox deep-clean-checkbox mr-2"><label for="f1">Sweep/mop Fabrication, Welding, & CNC shop floors.</label></li>
+                            </ul>
+                            <div class="font-medium text-slate-700 mt-4">Zone 5 (Red):</div>
+                            <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="f2" class="task-checkbox deep-clean-checkbox mr-2"><label for="f2">Detail clean Women's Washroom/Locker Room.</label></li>
+                                <li><input type="checkbox" id="f3" class="task-checkbox deep-clean-checkbox mr-2"><label for="f3">Sweep/mop all floor areas in the zone.</label></li>
+                            </ul>
+                        `
+                    },
+                    {
+                        type: 'end-of-week',
+                        title: 'End of Week Duties',
+                        icon: '✅',
+                        color: '#16a34a', // green-600
+                        content: `
+                             <ul class="list-inside list-disc pl-2 space-y-2">
+                                <li><input type="checkbox" id="eow1" class="task-checkbox mr-2"><label for="eow1">Thoroughly clean all custodial equipment.</label></li>
+                                <li><input type="checkbox" id="eow2" class="task-checkbox mr-2"><label for="eow2">Organize janitorial closets.</label></li>
+                            </ul>
+                        `
+                    }
+                ]
+            }
+        };
+
+        const display = document.getElementById('schedule-display');
+        const navMobile = document.getElementById('day-navigation-mobile');
+        const navDesktop = document.getElementById('day-navigation-desktop');
+        const currentDateEl = document.getElementById('currentDate');
+        const scheduleTemplate = document.getElementById('schedule-template');
+        const taskCardTemplate = document.getElementById('task-card-template');
+
+        const safetyTipBtn = document.getElementById('safetyTipBtn');
+        const safetyTipResult = document.getElementById('safetyTipResult');
+        const stainInput = document.getElementById('stainInput');
+        const stainBtn = document.getElementById('stainBtn');
+        const stainResult = document.getElementById('stainResult');
+        
+        const dashboardToggle = document.getElementById('dashboard-toggle');
+        const dashboardContent = document.getElementById('dashboard-content');
+        const toggleIcon = document.getElementById('toggle-icon');
+
+        async function callGeminiAPI(prompt, button) {
+            const buttonText = button.querySelector('.btn-text');
+            const spinner = button.querySelector('.spinner');
+            
+            buttonText.classList.add('hidden');
+            spinner.classList.remove('hidden');
+            button.disabled = true;
+
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+            };
+            
+            let responseText = "Sorry, I couldn't get a response. Please check your connection and try again.";
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                     throw new Error(`API request failed with status ${response.status}`);
+                }
+                
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    responseText = candidate.content.parts[0].text.replace(/\n/g, '<br>');
+                }
+
+            } catch (error) {
+                console.error("Gemini API call failed:", error);
+            } finally {
+                buttonText.classList.remove('hidden');
+                spinner.classList.add('hidden');
+                button.disabled = false;
+            }
+            return responseText;
+        }
+
+        safetyTipBtn.addEventListener('click', async () => {
+            const prompt = "Provide one concise, actionable safety tip for a custodian working in an industrial or manufacturing facility. Focus on a common but important task like chemical handling, floor care, or equipment usage.";
+            safetyTipResult.innerHTML = await callGeminiAPI(prompt, safetyTipBtn);
+        });
+
+        stainBtn.addEventListener('click', async () => {
+            const stainDescription = stainInput.value.trim();
+            if (!stainDescription) {
+                stainResult.textContent = "Please describe the stain first.";
+                return;
+            }
+            const prompt = `I am a custodian in a facility. I need to clean a stain. Here is the description: "${stainDescription}". Provide me with a safe and effective step-by-step cleaning procedure. Include any safety warnings for chemicals.`;
+            stainResult.innerHTML = await callGeminiAPI(prompt, stainBtn);
+        });
+
+        currentDateEl.textContent = new Date().toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+
+        const totalDeepCleanTasks = Object.values(scheduleData)
+            .flatMap(day => day.tasks)
+            .filter(task => task.type === 'deep-clean')
+            .reduce((acc, task) => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(task.content, 'text/html');
+                return acc + doc.querySelectorAll('.deep-clean-checkbox').length;
+            }, 0);
+            
+        let progressChart;
+
+        const updateChart = () => {
+            const checkedCount = document.querySelectorAll('.deep-clean-checkbox:checked').length;
+            const percentage = totalDeepCleanTasks > 0 ? (checkedCount / totalDeepCleanTasks) * 100 : 0;
+            
+            if (!progressChart) {
+                const ctx = document.getElementById('progressChart').getContext('2d');
+                progressChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Completed', 'Remaining'],
+                        datasets: [{
+                            data: [checkedCount, totalDeepCleanTasks - checkedCount],
+                            backgroundColor: ['#4ade80', '#e5e7eb'],
+                            borderColor: ['#ffffff'],
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '70%',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { enabled: false },
+                            title: {
+                                display: true,
+                                text: `${Math.round(percentage)}%`,
+                                position: 'bottom',
+                                align: 'center',
+                                font: { size: 24, weight: 'bold' },
+                                color: '#1e293b',
+                                padding: { top: -60 }
+                            }
+                        }
+                    }
+                });
+            } else {
+                progressChart.data.datasets[0].data = [checkedCount, totalDeepCleanTasks - checkedCount];
+                progressChart.options.plugins.title.text = `${Math.round(percentage)}%`;
+                progressChart.update();
+            }
+        };
+        
+        const renderSchedule = (day) => {
+            const data = scheduleData[day];
+            if (!data) return;
+
+            const scheduleClone = scheduleTemplate.content.cloneNode(true);
+            scheduleClone.querySelector('[data-id="day-title"]').textContent = data.title;
+            scheduleClone.querySelector('[data-id="shift-hours"]').textContent = data.shift;
+
+            const taskContainer = scheduleClone.querySelector('[data-id="task-container"]');
+            taskContainer.innerHTML = '';
+
+            data.tasks.forEach(task => {
+                const cardClone = taskCardTemplate.content.cloneNode(true);
+                const cardElement = cardClone.querySelector('.task-card');
+                cardElement.style.setProperty('--card-color', task.color);
+                cardClone.querySelector('[data-id="card-icon"]').textContent = task.icon;
+                cardClone.querySelector('[data-id="card-title"]').textContent = task.title;
+                cardClone.querySelector('[data-id="card-content"]').innerHTML = task.content;
+                taskContainer.appendChild(cardClone);
+            });
+            
+            display.innerHTML = '';
+            display.appendChild(scheduleClone);
+
+            document.querySelectorAll('.deep-clean-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', updateChart);
+            });
+        };
+        
+        const handleNavClick = (e) => {
+            if (e.target.tagName === 'BUTTON') {
+                const day = e.target.dataset.day;
+
+                navDesktop.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+                navMobile.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+
+                navDesktop.querySelector(`[data-day="${day}"]`).classList.add('active');
+                navMobile.querySelector(`[data-day="${day}"]`).classList.add('active');
+
+                renderSchedule(day);
+            }
+        };
+
+        navDesktop.addEventListener('click', handleNavClick);
+        navMobile.addEventListener('click', handleNavClick);
+        
+        dashboardToggle.addEventListener('click', () => {
+            const isCollapsed = dashboardContent.classList.toggle('collapsed');
+            toggleIcon.textContent = isCollapsed ? '▼' : '▲';
+        });
+
+        const today = new Date().getDay();
+        const dayMap = [ 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const currentDayKey = dayMap[today];
+        
+        const todayButton = navDesktop.querySelector(`[data-day="${currentDayKey}"]`) || navDesktop.querySelector('[data-day="monday"]');
+        if(todayButton) {
+            todayButton.click();
+        }
+        
+        updateChart();
+
+        // Collapse dashboard by default on mobile
+        if (window.innerWidth < 1024) {
+            dashboardContent.classList.add('collapsed');
+            toggleIcon.textContent = '▼';
+        } else {
+            toggleIcon.textContent = '▲';
+        }
+    });
+</script>
+
+</body>
+</html>
+
