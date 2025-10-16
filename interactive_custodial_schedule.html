@@ -82,7 +82,7 @@
         </header>
 
         <main class="flex flex-col lg:grid lg:grid-cols-4 lg:gap-8">
-            
+
             <aside class="lg:col-span-1 order-2 lg:order-1 mt-8 lg:mt-0">
                 <div class="bg-white p-4 rounded-lg shadow-sm lg:sticky lg:top-8">
                     <h2 class="text-lg font-semibold mb-4 text-slate-700 hidden lg:block">Select Day</h2>
@@ -169,7 +169,7 @@
             </div>
         </div>
     </template>
-    
+
     <template id="task-card-template">
          <div class="task-card bg-white p-6 rounded-lg shadow-sm" style="border-color: var(--card-color, #e5e7eb);">
             <h3 class="text-lg sm:text-xl font-semibold mb-4 text-slate-800 flex items-center">
@@ -413,7 +413,7 @@
         const stainInput = document.getElementById('stainInput');
         const stainBtn = document.getElementById('stainBtn');
         const stainResult = document.getElementById('stainResult');
-        
+
         const dashboardToggle = document.getElementById('dashboard-toggle');
         const dashboardContent = document.getElementById('dashboard-content');
         const toggleIcon = document.getElementById('toggle-icon');
@@ -421,19 +421,27 @@
         async function callGeminiAPI(prompt, button) {
             const buttonText = button.querySelector('.btn-text');
             const spinner = button.querySelector('.spinner');
-            
+
+            // --- PASTE YOUR GOOGLE GEMINI API KEY HERE ---
+            const apiKey = "";
+            // ---------------------------------------------
+
+            if (!apiKey) {
+                return "AI features are disabled. Please add your Google Gemini API key to the script.";
+            }
+
             buttonText.classList.add('hidden');
             spinner.classList.remove('hidden');
             button.disabled = true;
 
-            const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            // Using a recommended model. For a full list of models, see: https://ai.google.dev/models/gemini
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
             const payload = {
                 contents: [{ parts: [{ text: prompt }] }],
             };
-            
-            let responseText = "Sorry, I couldn't get a response. Please check your connection and try again.";
+
+            let responseText = "Sorry, I couldn't get a response. Please check your connection and API key, then try again.";
 
             try {
                 const response = await fetch(apiUrl, {
@@ -443,14 +451,17 @@
                 });
 
                 if (!response.ok) {
-                     throw new Error(`API request failed with status ${response.status}`);
+                     throw new Error(`API request failed with status ${response.status}: ${await response.text()}`);
                 }
-                
+
                 const result = await response.json();
                 const candidate = result.candidates?.[0];
 
                 if (candidate && candidate.content?.parts?.[0]?.text) {
                     responseText = candidate.content.parts[0].text.replace(/\n/g, '<br>');
+                } else if (result.error) {
+                    console.error("Gemini API Error:", result.error.message);
+                    responseText = `An API error occurred: ${result.error.message}`;
                 }
 
             } catch (error) {
@@ -493,13 +504,13 @@
                 const doc = parser.parseFromString(task.content, 'text/html');
                 return acc + doc.querySelectorAll('.deep-clean-checkbox').length;
             }, 0);
-            
+
         let progressChart;
 
         const updateChart = () => {
             const checkedCount = document.querySelectorAll('.deep-clean-checkbox:checked').length;
             const percentage = totalDeepCleanTasks > 0 ? (checkedCount / totalDeepCleanTasks) * 100 : 0;
-            
+
             if (!progressChart) {
                 const ctx = document.getElementById('progressChart').getContext('2d');
                 progressChart = new Chart(ctx, {
@@ -538,7 +549,7 @@
                 progressChart.update();
             }
         };
-        
+
         const renderSchedule = (day) => {
             const data = scheduleData[day];
             if (!data) return;
@@ -559,7 +570,7 @@
                 cardClone.querySelector('[data-id="card-content"]').innerHTML = task.content;
                 taskContainer.appendChild(cardClone);
             });
-            
+
             display.innerHTML = '';
             display.appendChild(scheduleClone);
 
@@ -567,7 +578,7 @@
                 checkbox.addEventListener('change', updateChart);
             });
         };
-        
+
         const handleNavClick = (e) => {
             if (e.target.tagName === 'BUTTON') {
                 const day = e.target.dataset.day;
@@ -584,7 +595,7 @@
 
         navDesktop.addEventListener('click', handleNavClick);
         navMobile.addEventListener('click', handleNavClick);
-        
+
         dashboardToggle.addEventListener('click', () => {
             const isCollapsed = dashboardContent.classList.toggle('collapsed');
             toggleIcon.textContent = isCollapsed ? '▼' : '▲';
@@ -593,12 +604,12 @@
         const today = new Date().getDay();
         const dayMap = [ 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
         const currentDayKey = dayMap[today];
-        
+
         const todayButton = navDesktop.querySelector(`[data-day="${currentDayKey}"]`) || navDesktop.querySelector('[data-day="monday"]');
         if(todayButton) {
             todayButton.click();
         }
-        
+
         updateChart();
 
         // Collapse dashboard by default on mobile
@@ -613,4 +624,3 @@
 
 </body>
 </html>
-
