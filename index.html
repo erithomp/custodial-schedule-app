@@ -509,10 +509,36 @@
 
         const updateChart = () => {
             const checkedCount = document.querySelectorAll('.deep-clean-checkbox:checked').length;
-            const percentage = totalDeepCleanTasks > 0 ? (checkedCount / totalDeepCleanTasks) * 100 : 0;
 
             if (!progressChart) {
                 const ctx = document.getElementById('progressChart').getContext('2d');
+
+                const centerTextPlugin = {
+                    id: 'centerText',
+                    afterDraw: (chart) => {
+                        const { ctx, chartArea } = chart;
+                        if (!chartArea) return;
+
+                        ctx.save();
+                        const data = chart.data.datasets[0].data;
+                        const completed = data[0];
+                        const total = data.reduce((a, b) => a + b, 0);
+                        const percentage = total > 0 ? (completed / total) * 100 : 0;
+                        const text = `${Math.round(percentage)}%`;
+
+                        ctx.font = 'bold 24px Inter, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillStyle = '#1e293b'; // slate-800
+
+                        const centerX = (chartArea.left + chartArea.right) / 2;
+                        const centerY = (chartArea.top + chartArea.bottom) / 2;
+
+                        ctx.fillText(text, centerX, centerY);
+                        ctx.restore();
+                    }
+                };
+
                 progressChart = new Chart(ctx, {
                     type: 'doughnut',
                     data: {
@@ -530,22 +556,13 @@
                         cutout: '70%',
                         plugins: {
                             legend: { display: false },
-                            tooltip: { enabled: false },
-                            title: {
-                                display: true,
-                                text: `${Math.round(percentage)}%`,
-                                position: 'bottom',
-                                align: 'center',
-                                font: { size: 24, weight: 'bold' },
-                                color: '#1e293b',
-                                padding: { top: -135 }
-                            }
+                            tooltip: { enabled: false }
                         }
-                    }
+                    },
+                    plugins: [centerTextPlugin]
                 });
             } else {
                 progressChart.data.datasets[0].data = [checkedCount, totalDeepCleanTasks - checkedCount];
-                progressChart.options.plugins.title.text = `${Math.round(percentage)}%`;
                 progressChart.update();
             }
         };
