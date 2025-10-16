@@ -20,6 +20,9 @@
             border-left-width: 4px;
             transition: all 0.3s ease;
         }
+        .task-card.completed {
+            border-color: #16a34a !important; /* green-600 */
+        }
         .nav-button {
             transition: all 0.3s ease;
         }
@@ -160,8 +163,13 @@
     <template id="schedule-template">
         <div class="space-y-6">
             <div class="bg-white p-6 rounded-lg shadow-sm">
-                <h2 class="text-2xl font-bold mb-1" data-id="day-title"></h2>
-                <p class="text-lg font-medium text-indigo-600" data-id="shift-hours"></p>
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h2 class="text-2xl font-bold mb-1" data-id="day-title"></h2>
+                        <p class="text-lg font-medium text-indigo-600" data-id="shift-hours"></p>
+                    </div>
+                    <button data-id="reset-day-btn" class="text-sm font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md px-3 py-1 transition-colors">Reset Day</button>
+                </div>
             </div>
 
             <div data-id="task-container" class="space-y-6">
@@ -507,8 +515,22 @@
 
         let progressChart;
 
+        const getSavedTasks = () => {
+            return JSON.parse(localStorage.getItem('completedTasks')) || {};
+        };
+
+        const saveTaskState = (taskId, isChecked) => {
+            const savedTasks = getSavedTasks();
+            if (isChecked) {
+                savedTasks[taskId] = true;
+            } else {
+                delete savedTasks[taskId];
+            }
+            localStorage.setItem('completedTasks', JSON.stringify(savedTasks));
+        };
+
         const updateChart = () => {
-            const checkedCount = document.querySelectorAll('.deep-clean-checkbox:checked').length;
+            const checkedCount = Object.keys(getSavedTasks()).filter(id => document.getElementById(id) && document.getElementById(id).classList.contains('deep-clean-checkbox')).length;
 
             if (!progressChart) {
                 const ctx = document.getElementById('progressChart').getContext('2d');
@@ -591,9 +613,51 @@
             display.innerHTML = '';
             display.appendChild(scheduleClone);
 
-            document.querySelectorAll('.deep-clean-checkbox').forEach(checkbox => {
-                checkbox.addEventListener('change', updateChart);
+            const savedTasks = getSavedTasks();
+
+            const checkCompletion = (card) => {
+                const checkboxes = card.querySelectorAll('.task-checkbox');
+                if (checkboxes.length === 0) return;
+                const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                if (allChecked) {
+                    card.classList.add('completed');
+                } else {
+                    card.classList.remove('completed');
+                }
+            };
+
+            document.querySelectorAll('.task-checkbox').forEach(checkbox => {
+                if (savedTasks[checkbox.id]) {
+                    checkbox.checked = true;
+                }
+                checkbox.addEventListener('change', (e) => {
+                    saveTaskState(e.target.id, e.target.checked);
+                    if (e.target.classList.contains('deep-clean-checkbox')) {
+                        updateChart();
+                    }
+                    checkCompletion(e.target.closest('.task-card'));
+                });
             });
+
+            document.querySelectorAll('.task-card').forEach(checkCompletion);
+
+            const resetButton = document.querySelector('[data-id="reset-day-btn"]');
+            resetButton.addEventListener('click', () => {
+                if (confirm('Are you sure you want to reset all tasks for this day?')) {
+                    const savedTasks = getSavedTasks();
+                    document.querySelectorAll('.task-checkbox').forEach(checkbox => {
+                        if (checkbox.checked) {
+                            checkbox.checked = false;
+                            delete savedTasks[checkbox.id];
+                        }
+                    });
+                    localStorage.setItem('completedTasks', JSON.stringify(savedTasks));
+                    document.querySelectorAll('.task-card').forEach(checkCompletion);
+                    updateChart();
+                }
+            });
+
+            updateChart();
         };
 
         const handleNavClick = (e) => {
